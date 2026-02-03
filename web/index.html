@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bomagi - Interior Inspiration Curator</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+        .image-card:hover .overlay { opacity: 1; }
+        .overlay { transition: opacity 0.2s; }
+        .room-badge { font-size: 0.7rem; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        // API URL - change to your backend when deployed
+        const API_URL = localStorage.getItem('bomagi_api_url') || 'http://localhost:8000';
+
+        const ROOM_TYPES = [
+            { value: '', label: 'All Rooms' },
+            { value: 'living_room', label: 'Living Room' },
+            { value: 'kitchen', label: 'Kitchen' },
+            { value: 'bedroom', label: 'Bedroom' },
+            { value: 'bathroom', label: 'Bathroom' },
+            { value: 'hallway', label: 'Hallway' },
+            { value: 'dining', label: 'Dining' },
+            { value: 'office', label: 'Office' },
+            { value: 'outdoor', label: 'Outdoor' },
+            { value: 'other', label: 'Other' },
+        ];
+
+        const SOURCES = [
+            { value: '', label: 'All Sources' },
+            // Real photography (recommended)
+            { value: 'brands', label: '🛋️ All Brands' },
+            { value: 'magazines', label: '📖 All Magazines' },
+            { value: 'bolia', label: 'Bolia' },
+            { value: 'hay', label: 'HAY' },
+            { value: 'muuto', label: 'Muuto' },
+            { value: 'normann', label: 'Normann Copenhagen' },
+            { value: 'fermliving', label: 'Ferm Living' },
+            { value: 'string', label: 'String' },
+            { value: 'menu', label: 'Menu/Audo' },
+            { value: 'boconcept', label: 'BoConcept' },
+            { value: 'ikea', label: 'IKEA' },
+            { value: 'dezeen', label: 'Dezeen' },
+            { value: 'archdaily', label: 'ArchDaily' },
+            { value: 'bobedre', label: 'Bo Bedre' },
+            { value: 'nordroom', label: 'The Nordroom' },
+            { value: 'myscandinavianhome', label: 'My Scandinavian Home' },
+            { value: 'finn', label: 'Finn.no' },
+            // AI sources
+            { value: 'civitai', label: '🤖 Civitai (AI)' },
+            { value: 'lexica', label: '🤖 Lexica (AI)' },
+            { value: 'midjourney', label: '🤖 Midjourney (AI)' },
+        ];
+
+        const STATUS_OPTIONS = [
+            { value: '', label: 'All Status' },
+            { value: 'pending', label: 'Pending' },
+            { value: 'approved', label: 'Approved' },
+            { value: 'rejected', label: 'Rejected' },
+        ];
+
+        // Stats Component
+        function Stats({ stats }) {
+            if (!stats) return null;
+            return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-gray-800 rounded-lg p-4">
+                        <div className="text-3xl font-bold text-white">{stats.total || 0}</div>
+                        <div className="text-gray-400 text-sm">Total Images</div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-4">
+                        <div className="text-3xl font-bold text-green-400">{stats.by_status?.approved || 0}</div>
+                        <div className="text-gray-400 text-sm">Approved</div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-4">
+                        <div className="text-3xl font-bold text-yellow-400">{stats.by_status?.pending || 0}</div>
+                        <div className="text-gray-400 text-sm">Pending Review</div>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-4">
+                        <div className="text-3xl font-bold text-red-400">{stats.by_status?.rejected || 0}</div>
+                        <div className="text-gray-400 text-sm">Rejected</div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Scrape Panel Component
+        function ScrapePanel({ onScrapeComplete }) {
+            const [source, setSource] = useState('civitai');
+            const [query, setQuery] = useState('scandinavian interior design');
+            const [roomType, setRoomType] = useState('');
+            const [limit, setLimit] = useState(50);
+            const [isRunning, setIsRunning] = useState(false);
+            const [progress, setProgress] = useState(null);
+
+            const startScrape = async () => {
+                setIsRunning(true);
+                setProgress({ status: 'starting', found: 0, new: 0 });
+
+                try {
+                    const res = await fetch(`${API_URL}/scrape`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            source,
+                            query,
+                            room_type: roomType || null,
+                            limit,
+                            download: false
+                        })
+                    });
+                    const data = await res.json();
+                    const runId = data.run_id;
+
+                    // Poll for status
+                    const poll = setInterval(async () => {
+                        const statusRes = await fetch(`${API_URL}/scrape/${runId}`);
+                        const status = await statusRes.json();
+                        setProgress(status);
+
+                        if (status.status === 'completed' || status.status === 'failed') {
+                            clearInterval(poll);
+                            setIsRunning(false);
+                            onScrapeComplete();
+                        }
+                    }, 1000);
+
+                } catch (err) {
+                    console.error('Scrape error:', err);
+                    setIsRunning(false);
+                    setProgress({ status: 'failed', error: err.message });
+                }
+            };
+
+            return (
+                <div className="bg-gray-800 rounded-lg p-6 mb-6">
+                    <h2 className="text-xl font-semibold mb-4">Scrape New Images</h2>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">Source</label>
+                            <select
+                                value={source}
+                                onChange={e => setSource(e.target.value)}
+                                className="w-full bg-gray-700 rounded px-3 py-2 text-white"
+                                disabled={isRunning}
+                            >
+                                {SOURCES.filter(s => s.value).map(s => (
+                                    <option key={s.value} value={s.value}>{s.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">Search Query</label>
+                            <input
+                                type="text"
+                                value={query}
+                                onChange={e => setQuery(e.target.value)}
+                                className="w-full bg-gray-700 rounded px-3 py-2 text-white"
+                                disabled={isRunning}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">Room Type</label>
+                            <select
+                                value={roomType}
+                                onChange={e => setRoomType(e.target.value)}
+                                className="w-full bg-gray-700 rounded px-3 py-2 text-white"
+                                disabled={isRunning}
+                            >
+                                {ROOM_TYPES.map(r => (
+                                    <option key={r.value} value={r.value}>{r.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-1">Limit</label>
+                            <input
+                                type="number"
+                                value={limit}
+                                onChange={e => setLimit(parseInt(e.target.value))}
+                                min="10"
+                                max="500"
+                                className="w-full bg-gray-700 rounded px-3 py-2 text-white"
+                                disabled={isRunning}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={startScrape}
+                            disabled={isRunning}
+                            className={`px-6 py-2 rounded font-medium ${
+                                isRunning
+                                    ? 'bg-gray-600 cursor-not-allowed'
+                                    : 'bg-blue-600 hover:bg-blue-500'
+                            }`}
+                        >
+                            {isRunning ? 'Scraping...' : 'Start Scrape'}
+                        </button>
+
+                        {progress && (
+                            <div className="text-sm text-gray-400">
+                                Status: <span className="text-white">{progress.status}</span>
+                                {progress.found > 0 && (
+                                    <> | Found: <span className="text-white">{progress.found}</span></>
+                                )}
+                                {progress.new > 0 && (
+                                    <> | New: <span className="text-green-400">{progress.new}</span></>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Image Card Component
+        function ImageCard({ image, onCurate }) {
+            const [expanded, setExpanded] = useState(false);
+
+            const roomColors = {
+                living_room: 'bg-blue-500',
+                kitchen: 'bg-orange-500',
+                bedroom: 'bg-purple-500',
+                bathroom: 'bg-cyan-500',
+                hallway: 'bg-gray-500',
+                dining: 'bg-yellow-500',
+                office: 'bg-green-500',
+                outdoor: 'bg-emerald-500',
+                other: 'bg-gray-600',
+            };
+
+            const statusColors = {
+                pending: 'border-gray-600',
+                approved: 'border-green-500',
+                rejected: 'border-red-500',
+            };
+
+            return (
+                <div
+                    className={`image-card relative rounded-lg overflow-hidden border-2 ${statusColors[image.status] || 'border-gray-700'}`}
+                >
+                    <div className="aspect-[4/3] bg-gray-800 relative">
+                        <img
+                            src={image.thumbnail_url || image.image_url}
+                            alt={image.title || 'Interior'}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            onError={e => { e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>' }}
+                        />
+
+                        {/* Overlay with actions */}
+                        <div className="overlay absolute inset-0 bg-black/60 opacity-0 flex flex-col justify-between p-3">
+                            <div className="flex justify-between items-start">
+                                <span className={`room-badge ${roomColors[image.room_type] || 'bg-gray-600'} px-2 py-1 rounded text-white`}>
+                                    {image.room_type?.replace('_', ' ') || 'unclassified'}
+                                </span>
+                                <span className="text-xs text-gray-300">{image.source}</span>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => onCurate(image.id, 'approved')}
+                                    className="flex-1 bg-green-600 hover:bg-green-500 py-2 rounded text-sm font-medium"
+                                >
+                                    ✓ Approve
+                                </button>
+                                <button
+                                    onClick={() => onCurate(image.id, 'rejected')}
+                                    className="flex-1 bg-red-600 hover:bg-red-500 py-2 rounded text-sm font-medium"
+                                >
+                                    ✕ Reject
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Info bar */}
+                    <div className="p-2 bg-gray-800">
+                        <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-400 truncate max-w-[60%]">
+                                {image.title || image.source_id?.slice(0, 12)}
+                            </span>
+                            {image.quality_score && (
+                                <span className="text-yellow-400">
+                                    ★ {(image.quality_score * 100).toFixed(0)}%
+                                </span>
+                            )}
+                        </div>
+
+                        {image.prompt && (
+                            <button
+                                onClick={() => setExpanded(!expanded)}
+                                className="text-xs text-blue-400 hover:text-blue-300 mt-1"
+                            >
+                                {expanded ? 'Hide prompt' : 'Show prompt'}
+                            </button>
+                        )}
+
+                        {expanded && image.prompt && (
+                            <p className="text-xs text-gray-400 mt-2 max-h-20 overflow-auto">
+                                {image.prompt}
+                            </p>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Main App
+        function App() {
+            const [images, setImages] = useState([]);
+            const [stats, setStats] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [filters, setFilters] = useState({
+                source: '',
+                room_type: '',
+                status: 'pending',
+                min_quality: 0
+            });
+
+            const fetchStats = async () => {
+                try {
+                    const res = await fetch(`${API_URL}/stats`);
+                    const data = await res.json();
+                    setStats(data);
+                } catch (err) {
+                    console.error('Stats error:', err);
+                }
+            };
+
+            const fetchImages = useCallback(async () => {
+                setLoading(true);
+                try {
+                    const params = new URLSearchParams();
+                    if (filters.source) params.set('source', filters.source);
+                    if (filters.room_type) params.set('room_type', filters.room_type);
+                    if (filters.status) params.set('status', filters.status);
+                    if (filters.min_quality) params.set('min_quality', filters.min_quality);
+                    params.set('limit', '100');
+
+                    const res = await fetch(`${API_URL}/images?${params}`);
+                    const data = await res.json();
+                    setImages(data.images || []);
+                } catch (err) {
+                    console.error('Fetch error:', err);
+                    setImages([]);
+                }
+                setLoading(false);
+            }, [filters]);
+
+            useEffect(() => {
+                fetchStats();
+                fetchImages();
+            }, [fetchImages]);
+
+            const handleCurate = async (imageId, status) => {
+                try {
+                    await fetch(`${API_URL}/images/${imageId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status })
+                    });
+                    // Remove from current view
+                    setImages(prev => prev.filter(img => img.id !== imageId));
+                    fetchStats();
+                } catch (err) {
+                    console.error('Curate error:', err);
+                }
+            };
+
+            const handleFilterChange = (key, value) => {
+                setFilters(prev => ({ ...prev, [key]: value }));
+            };
+
+            return (
+                <div className="max-w-7xl mx-auto px-4 py-8">
+                    {/* Header */}
+                    <div className="mb-8">
+                        <h1 className="text-3xl font-bold mb-2">Bomagi</h1>
+                        <p className="text-gray-400">Interior Inspiration Curator</p>
+                    </div>
+
+                    {/* Stats */}
+                    <Stats stats={stats} />
+
+                    {/* Scrape Panel */}
+                    <ScrapePanel onScrapeComplete={() => { fetchStats(); fetchImages(); }} />
+
+                    {/* Filters */}
+                    <div className="bg-gray-800 rounded-lg p-4 mb-6">
+                        <div className="flex flex-wrap gap-4 items-center">
+                            <div>
+                                <select
+                                    value={filters.source}
+                                    onChange={e => handleFilterChange('source', e.target.value)}
+                                    className="bg-gray-700 rounded px-3 py-2 text-sm"
+                                >
+                                    {SOURCES.map(s => (
+                                        <option key={s.value} value={s.value}>{s.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <select
+                                    value={filters.room_type}
+                                    onChange={e => handleFilterChange('room_type', e.target.value)}
+                                    className="bg-gray-700 rounded px-3 py-2 text-sm"
+                                >
+                                    {ROOM_TYPES.map(r => (
+                                        <option key={r.value} value={r.value}>{r.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <select
+                                    value={filters.status}
+                                    onChange={e => handleFilterChange('status', e.target.value)}
+                                    className="bg-gray-700 rounded px-3 py-2 text-sm"
+                                >
+                                    {STATUS_OPTIONS.map(s => (
+                                        <option key={s.value} value={s.value}>{s.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <label className="text-sm text-gray-400">Min Quality:</label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.1"
+                                    value={filters.min_quality}
+                                    onChange={e => handleFilterChange('min_quality', parseFloat(e.target.value))}
+                                    className="w-24"
+                                />
+                                <span className="text-sm">{(filters.min_quality * 100).toFixed(0)}%</span>
+                            </div>
+
+                            <div className="ml-auto text-sm text-gray-400">
+                                Showing {images.length} images
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Image Grid */}
+                    {loading ? (
+                        <div className="text-center py-12 text-gray-400">Loading...</div>
+                    ) : images.length === 0 ? (
+                        <div className="text-center py-12">
+                            <p className="text-gray-400 mb-4">No images found</p>
+                            <p className="text-sm text-gray-500">Try scraping some images or adjust your filters</p>
+                        </div>
+                    ) : (
+                        <div className="image-grid">
+                            {images.map(image => (
+                                <ImageCard
+                                    key={image.id}
+                                    image={image}
+                                    onCurate={handleCurate}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
