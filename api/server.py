@@ -193,6 +193,7 @@ async def list_images(
     room_type: Optional[str] = None,
     status: Optional[str] = Query(None, description="pending, approved, or rejected"),
     min_quality: Optional[float] = Query(None, ge=0, le=1),
+    search: Optional[str] = Query(None, description="Search title, prompt, or URL"),
     limit: int = Query(50, le=200),
     offset: int = 0,
     order_by: str = "quality_score DESC"
@@ -203,6 +204,7 @@ async def list_images(
         room_type=room_type,
         status=status,
         min_quality=min_quality,
+        search=search,
         limit=limit,
         offset=offset,
         order_by=order_by

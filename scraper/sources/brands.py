@@ -25,6 +25,31 @@ class BrandScraperBase(BaseSource):
     base_url = ""
     inspiration_urls = []  # URLs to scrape for inspiration images
 
+    def _handle_cookie_consent(self, page):
+        """Try to accept cookie consent dialogs."""
+        consent_selectors = [
+            '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+            'button:has-text("Accept all")',
+            'button:has-text("Accept")',
+            'button:has-text("Allow all")',
+            'button:has-text("Allow")',
+            'button:has-text("I agree")',
+            'button:has-text("OK")',
+            '[data-testid="cookie-accept"]',
+            '[class*="cookie"] button:has-text("Accept")',
+            '[class*="consent"] button:has-text("Accept")',
+        ]
+        for selector in consent_selectors:
+            try:
+                btn = page.locator(selector)
+                if btn.count() > 0:
+                    btn.first.click(timeout=3000)
+                    page.wait_for_timeout(1000)
+                    return True
+            except:
+                continue
+        return False
+
     def search(
         self,
         query: str = None,
@@ -42,7 +67,7 @@ class BrandScraperBase(BaseSource):
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             )
             page = context.new_page()
 
@@ -54,8 +79,11 @@ class BrandScraperBase(BaseSource):
                     print(f"  Scraping {self.brand_name}: {url}")
 
                     try:
-                        page.goto(url, wait_until='networkidle', timeout=30000)
+                        page.goto(url, wait_until='domcontentloaded', timeout=30000)
                         page.wait_for_timeout(2000)
+
+                        # Handle cookie consent
+                        self._handle_cookie_consent(page)
 
                         # Scroll to load lazy images
                         for _ in range(5):
@@ -157,11 +185,10 @@ class BoliaSource(BrandScraperBase):
     brand_name = "Bolia"
     base_url = "https://www.bolia.com"
     inspiration_urls = [
-        "https://www.bolia.com/en/inspiration/",
-        "https://www.bolia.com/en/inspiration/living-room/",
-        "https://www.bolia.com/en/inspiration/bedroom/",
-        "https://www.bolia.com/en/inspiration/dining-room/",
-        "https://www.bolia.com/en/inspiration/home-office/",
+        "https://www.bolia.com/en/furniture/living-room/",
+        "https://www.bolia.com/en/furniture/bedroom/",
+        "https://www.bolia.com/en/furniture/dining-room/",
+        "https://www.bolia.com/en/furniture/home-office/",
     ]
 
 
@@ -172,10 +199,9 @@ class HAYSource(BrandScraperBase):
     brand_name = "HAY"
     base_url = "https://www.hay.com"
     inspiration_urls = [
-        "https://hay.com/pages/inspiration",
-        "https://hay.com/collections/living",
-        "https://hay.com/collections/workspace",
-        "https://hay.com/collections/outdoor",
+        "https://www.hay.com/en-us/furniture",
+        "https://www.hay.com/en-us/lighting",
+        "https://www.hay.com/en-us/accessories",
     ]
 
 
@@ -186,10 +212,10 @@ class MuutoSource(BrandScraperBase):
     brand_name = "Muuto"
     base_url = "https://www.muuto.com"
     inspiration_urls = [
-        "https://www.muuto.com/inspiration",
-        "https://www.muuto.com/living",
-        "https://www.muuto.com/dining",
-        "https://www.muuto.com/work",
+        "https://www.muuto.com/products",
+        "https://www.muuto.com/products/seating",
+        "https://www.muuto.com/products/tables",
+        "https://www.muuto.com/products/storage",
     ]
 
 
@@ -212,10 +238,10 @@ class FermLivingSource(BrandScraperBase):
     brand_name = "Ferm Living"
     base_url = "https://www.fermliving.com"
     inspiration_urls = [
-        "https://fermliving.com/collections/inspiration",
-        "https://fermliving.com/collections/living-room",
-        "https://fermliving.com/collections/bedroom",
-        "https://fermliving.com/collections/kids-room",
+        "https://fermliving.com/pages/the-living-room",
+        "https://fermliving.com/pages/the-dining-room",
+        "https://fermliving.com/pages/the-bedroom",
+        "https://fermliving.com/pages/the-kids-room",
     ]
 
 
@@ -226,9 +252,11 @@ class StringSource(BrandScraperBase):
     brand_name = "String Furniture"
     base_url = "https://www.stringfurniture.com"
     inspiration_urls = [
-        "https://stringfurniture.com/inspiration/",
-        "https://stringfurniture.com/inspiration/living-room/",
-        "https://stringfurniture.com/inspiration/home-office/",
+        "https://www.stringfurniture.com/en-gb/inspiration/living-room",
+        "https://www.stringfurniture.com/en-gb/inspiration/workspace",
+        "https://www.stringfurniture.com/en-gb/inspiration/hallway",
+        "https://www.stringfurniture.com/en-gb/inspiration/kitchen",
+        "https://www.stringfurniture.com/en-gb/inspiration/bathroom",
     ]
 
 
@@ -266,13 +294,13 @@ class IKEASource(BrandScraperBase):
     brand_name = "IKEA"
     base_url = "https://www.ikea.com"
     inspiration_urls = [
-        "https://www.ikea.com/no/no/rooms/living-room/",
-        "https://www.ikea.com/no/no/rooms/bedroom/",
-        "https://www.ikea.com/no/no/rooms/kitchen/",
-        "https://www.ikea.com/no/no/rooms/home-office/",
-        "https://www.ikea.com/no/no/rooms/dining/",
-        "https://www.ikea.com/no/no/rooms/bathroom/",
-        "https://www.ikea.com/no/no/rooms/hallway/",
+        "https://www.ikea.com/us/en/rooms/living-room/",
+        "https://www.ikea.com/us/en/rooms/bedroom/",
+        "https://www.ikea.com/us/en/rooms/kitchen/",
+        "https://www.ikea.com/us/en/rooms/home-office/",
+        "https://www.ikea.com/us/en/rooms/dining/",
+        "https://www.ikea.com/us/en/rooms/bathroom/",
+        "https://www.ikea.com/us/en/rooms/childrens-room/",
     ]
 
     def _extract_images(self, page, source_url: str) -> List[Dict]:

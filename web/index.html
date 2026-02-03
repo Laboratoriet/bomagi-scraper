@@ -325,7 +325,8 @@
                 source: '',
                 room_type: '',
                 status: 'pending',
-                min_quality: 0
+                min_quality: 0,
+                search: ''
             });
 
             const fetchStats = async () => {
@@ -346,6 +347,7 @@
                     if (filters.room_type) params.set('room_type', filters.room_type);
                     if (filters.status) params.set('status', filters.status);
                     if (filters.min_quality) params.set('min_quality', filters.min_quality);
+                    if (filters.search) params.set('search', filters.search);
                     params.set('limit', '100');
 
                     const res = await fetch(`${API_URL}/images?${params}`);
@@ -399,6 +401,16 @@
                     {/* Filters */}
                     <div className="bg-gray-800 rounded-lg p-4 mb-6">
                         <div className="flex flex-wrap gap-4 items-center">
+                            <div className="flex-1 min-w-[200px]">
+                                <input
+                                    type="text"
+                                    value={filters.search}
+                                    onChange={e => handleFilterChange('search', e.target.value)}
+                                    placeholder="Search title, prompt, URL..."
+                                    className="w-full bg-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-400"
+                                />
+                            </div>
+
                             <div>
                                 <select
                                     value={filters.source}

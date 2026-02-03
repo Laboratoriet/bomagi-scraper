@@ -78,6 +78,7 @@ def get_images(
     room_type: Optional[str] = None,
     status: Optional[str] = None,
     min_quality: Optional[float] = None,
+    search: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
     order_by: str = "scraped_at DESC"
@@ -99,6 +100,10 @@ def get_images(
         if min_quality is not None:
             conditions.append("quality_score >= ?")
             params.append(min_quality)
+        if search:
+            conditions.append("(title LIKE ? OR prompt LIKE ? OR source_url LIKE ?)")
+            search_pattern = f"%{search}%"
+            params.extend([search_pattern, search_pattern, search_pattern])
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
