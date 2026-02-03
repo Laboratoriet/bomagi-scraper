@@ -10,8 +10,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
-        .image-card:hover .overlay { opacity: 1; }
-        .overlay { transition: opacity 0.2s; }
+        .image-card:hover .overlay { opacity: 1; pointer-events: auto; }
+        .overlay { transition: opacity 0.2s; pointer-events: none; }
         .room-badge { font-size: 0.7rem; }
     </style>
 </head>
@@ -90,12 +90,22 @@
 
         // Scrape Panel Component
         function ScrapePanel({ onScrapeComplete }) {
-            const [source, setSource] = useState('civitai');
+            const [source, setSource] = useState('all_simple');
             const [query, setQuery] = useState('scandinavian interior design');
             const [roomType, setRoomType] = useState('');
             const [limit, setLimit] = useState(50);
             const [isRunning, setIsRunning] = useState(false);
             const [progress, setProgress] = useState(null);
+            const pollRef = React.useRef(null);
+
+            // Cleanup polling on unmount
+            useEffect(() => {
+                return () => {
+                    if (pollRef.current) {
+                        clearInterval(pollRef.current);
+                    }
+                };
+            }, []);
 
             const startScrape = async () => {
                 setIsRunning(true);
@@ -113,21 +123,39 @@
                             download: false
                         })
                     });
+
+                    if (!res.ok) {
+                        throw new Error(`Server error: ${res.status}`);
+                    }
+
                     const data = await res.json();
                     const runId = data.run_id;
 
-                    // Poll for status
-                    const poll = setInterval(async () => {
-                        const statusRes = await fetch(`${API_URL}/scrape/${runId}`);
-                        const status = await statusRes.json();
-                        setProgress(status);
+                    if (!runId) {
+                        throw new Error('No run_id returned from server');
+                    }
 
-                        if (status.status === 'completed' || status.status === 'failed') {
-                            clearInterval(poll);
-                            setIsRunning(false);
-                            onScrapeComplete();
+                    // Poll for status
+                    pollRef.current = setInterval(async () => {
+                        try {
+                            const statusRes = await fetch(`${API_URL}/scrape/${runId}`);
+                            if (!statusRes.ok) {
+                                console.warn('Status check failed:', statusRes.status);
+                                return;
+                            }
+                            const status = await statusRes.json();
+                            setProgress(status);
+
+                            if (status.status === 'completed' || status.status === 'failed') {
+                                clearInterval(pollRef.current);
+                                pollRef.current = null;
+                                setIsRunning(false);
+                                onScrapeComplete();
+                            }
+                        } catch (pollErr) {
+                            console.warn('Polling error:', pollErr);
                         }
-                    }, 1000);
+                    }, 1500);
 
                 } catch (err) {
                     console.error('Scrape error:', err);
@@ -136,9 +164,29 @@
                 }
             };
 
+            const stopScrape = () => {
+                if (pollRef.current) {
+                    clearInterval(pollRef.current);
+                    pollRef.current = null;
+                }
+                setIsRunning(false);
+                setProgress(prev => ({ ...prev, status: 'stopped' }));
+            };
+
             return (
                 <div className="bg-gray-800 rounded-lg p-6 mb-6">
-                    <h2 className="text-xl font-semibold mb-4">Scrape New Images</h2>
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-semibold">Scrape New Images</h2>
+                        {isRunning && (
+                            <div className="flex items-center gap-2 text-blue-400">
+                                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                                </svg>
+                                <span className="text-sm">Scraping in progress...</span>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                         <div>
@@ -195,26 +243,38 @@
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <button
-                            onClick={startScrape}
-                            disabled={isRunning}
-                            className={`px-6 py-2 rounded font-medium ${
-                                isRunning
-                                    ? 'bg-gray-600 cursor-not-allowed'
-                                    : 'bg-blue-600 hover:bg-blue-500'
-                            }`}
-                        >
-                            {isRunning ? 'Scraping...' : 'Start Scrape'}
-                        </button>
+                        {isRunning ? (
+                            <button
+                                onClick={stopScrape}
+                                className="px-6 py-2 rounded font-medium bg-red-600 hover:bg-red-500 text-white"
+                            >
+                                Stop
+                            </button>
+                        ) : (
+                            <button
+                                onClick={startScrape}
+                                className="px-6 py-2 rounded font-medium bg-blue-600 hover:bg-blue-500 text-white"
+                            >
+                                Start Scrape
+                            </button>
+                        )}
 
                         {progress && (
                             <div className="text-sm text-gray-400">
-                                Status: <span className="text-white">{progress.status}</span>
-                                {progress.found > 0 && (
-                                    <> | Found: <span className="text-white">{progress.found}</span></>
+                                Status: <span className={`font-medium ${
+                                    progress.status === 'completed' ? 'text-green-400' :
+                                    progress.status === 'failed' ? 'text-red-400' :
+                                    progress.status === 'running' ? 'text-blue-400' :
+                                    'text-white'
+                                }`}>{progress.status}</span>
+                                {(progress.found > 0 || progress.status === 'running') && (
+                                    <> | Found: <span className="text-white">{progress.found || 0}</span></>
                                 )}
-                                {progress.new > 0 && (
-                                    <> | New: <span className="text-green-400">{progress.new}</span></>
+                                {(progress.new > 0 || progress.status === 'running') && (
+                                    <> | New: <span className="text-green-400">{progress.new || 0}</span></>
+                                )}
+                                {progress.error && (
+                                    <> | <span className="text-red-400">{progress.error}</span></>
                                 )}
                             </div>
                         )}
@@ -259,7 +319,7 @@
                         />
 
                         {/* Overlay with actions */}
-                        <div className="overlay absolute inset-0 bg-black/60 opacity-0 flex flex-col justify-between p-3">
+                        <div className="overlay absolute inset-0 bg-black/70 opacity-0 flex flex-col justify-between p-3 z-10">
                             <div className="flex justify-between items-start">
                                 <span className={`room-badge ${roomColors[image.room_type] || 'bg-gray-600'} px-2 py-1 rounded text-white`}>
                                     {image.room_type?.replace('_', ' ') || 'unclassified'}
@@ -270,13 +330,13 @@
                             <div className="flex gap-2">
                                 <button
                                     onClick={() => onCurate(image.id, 'approved')}
-                                    className="flex-1 bg-green-600 hover:bg-green-500 py-2 rounded text-sm font-medium"
+                                    className="flex-1 bg-green-600 hover:bg-green-500 py-2 rounded text-sm font-medium text-white shadow-lg"
                                 >
                                     ✓ Approve
                                 </button>
                                 <button
                                     onClick={() => onCurate(image.id, 'rejected')}
-                                    className="flex-1 bg-red-600 hover:bg-red-500 py-2 rounded text-sm font-medium"
+                                    className="flex-1 bg-red-600 hover:bg-red-500 py-2 rounded text-sm font-medium text-white shadow-lg"
                                 >
                                     ✕ Reject
                                 </button>
